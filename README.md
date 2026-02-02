@@ -49,3 +49,13 @@ sudo blkid
 # Set label (if not set during partitioning)
 sudo e2label /dev/sda3 DATA          # for data partition
 sudo e2label /dev/sda2 ROOT-BASE     # for root base
+
+#!/bin/sh
+exec tail -n +3 $0
+
+# Entrada para boot imutável (Atomic Green)
+menuentry "Atomic Green - Immutable Mode" {
+    linux   /boot/vmlinuz-* root=LABEL=ROOT-BASE rw preinit=/sbin/preinit-immutable quiet splash
+    initrd  /boot/initrd.img-*   # Mantenha essa linha se o seu sistema usa initrd (padrão no Ubuntu)
+}
+
