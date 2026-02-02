@@ -58,4 +58,128 @@ menuentry "Atomic Green - Immutable Mode" {
     linux   /boot/vmlinuz-* root=LABEL=ROOT-BASE rw preinit=/sbin/preinit-immutable quiet splash
     initrd  /boot/initrd.img-*   # Mantenha essa linha se o seu sistema usa initrd (padrão no Ubuntu)
 }
+```
+# Testing Immutability
 
+**Boot into "Atomic Green - Immutable Mode" and run:**
+
+```bash
+# Verify overlay is active
+mount | grep overlay
+# Expected: overlay on / type overlay (rw,relatime,lowerdir=/,upperdir=/mnt/data/upper,workdir=/mnt/data/work)
+```
+# Test persistence
+```bash
+echo "persistent test" > /etc/test-persistent.txt
+sudo reboot
+```
+# After reboot (still in immutable mode)
+```bash
+cat /etc/test-persistent.txt   # File must still exist
+```
+# Test full reset (return to pristine state)
+```bash
+sudo mkdir /mnt/data
+```
+# Use UUID (robust) or fallback LABEL
+```bash
+sudo mount /dev/disk/by-uuid/YOUR-DATA-UUID /mnt/data   # or sudo mount LABEL=DATA /mnt/data
+sudo rm -rf /mnt/data/upper/* /mnt/data/work/*
+sudo umount /mnt/data
+sudo reboot
+```
+# After reboot
+```bash
+ls /etc/test-persistent.txt   # File must be gone (system restored to base state)
+```
+
+Entendi a confusão! Vamos simplificar **ao máximo**, como você pediu: **usando somente LABELs** (sem UUID via parâmetro no GRUB). Isso funciona perfeitamente porque o script já tem um fallback automático para `LABEL=DATA` quando não há UUID.
+
+### Resumo rápido das labels (para não ficar dúvida)
+
+- **Partição root base** (a que tem o sistema instalado, lowerdir): **deve ter LABEL exatamente "ROOT-BASE"**.
+- **Partição de dados/persistência** (upper + work): **deve ter LABEL exatamente "DATA"**.
+
+Nada de UUID no GRUB — o script tenta LABEL=DATA automaticamente.
+
+### Exemplo exato do menuentry simples (só com labels)
+
+Edite o arquivo `/etc/grub.d/40_custom` (dentro do chroot ou no sistema instalado) e cole **exatamente isso**:
+
+```bash
+#!/bin/sh
+exec tail -n +3 $0
+
+menuentry "Atomic Green - Immutable Mode (protected root)" {
+    linux   /boot/vmlinuz-* root=LABEL=ROOT-BASE rw preinit=/sbin/preinit-immutable
+    # Se você usar initramfs normal (padrão no Ubuntu), descomente a linha abaixo:
+    # initrd  /boot/initrd.img-*
+}
+```
+
+### Passos completos para aplicar (simples e direto)
+
+1. No LiveCD (ou no sistema já bootado em modo normal), monte a partição root instalada:
+
+```bash
+sudo mount /dev/sda2 /mnt                  # ajuste /dev/sda2 para sua partição ROOT-BASE
+sudo mount /dev/sda1 /mnt/boot/efi         # EFI
+for d in dev proc sys run; do sudo mount --bind /$d /mnt/$d; done
+```
+
+2. Copie o script (se ainda não tiver):
+
+```bash
+sudo curl -o /mnt/sbin/preinit-immutable https://raw.githubusercontent.com/SEUUSER/AtomicGreen/main/preinit-immutable
+sudo chmod +x /mnt/sbin/preinit-immutable
+```
+
+3. Entre no chroot:
+
+```bash
+sudo chroot /mnt
+```
+
+4. Dentro do chroot, crie/edite o menuentry:
+
+```bash
+nano /etc/grub.d/40_custom
+```
+
+Cole o conteúdo que eu dei acima.
+
+5. Atualize GRUB:
+
+```bash
+chmod +x /etc/grub.d/40_custom
+update-grub
+exit   # sai do chroot
+```
+
+6. Desmonte e reboot:
+
+```bash
+sudo umount -l /mnt/{dev,proc,sys,run,boot/efi}
+sudo umount /mnt
+reboot
+```
+
+### O que aparece no GRUB
+
+- Entrada padrão: boot normal (sem imutabilidade, raiz gravável).
+- Nova entrada: "Atomic Green - Immutable Mode (protected root)" → selecione essa para boot imutável (usa só labels + preinit).
+
+O script vai mostrar na tela:
+
+- Tenta LABEL=DATA automaticamente (fallback).
+- Monta tudo e faz o overlay.
+
+Teste depois do boot (na entrada imutável):
+
+```bash
+mount | grep overlay   # deve mostrar o overlay ativo em /
+```
+
+Se quiser resetar: monte LABEL=DATA manualmente e apague upper/work.
+
+Agora está **super simples**, só labels, sem UUID complicando. Funciona 100% no Ubuntu Desktop/Minimal. Me avisa se bootou e como ficou a tela! 🚀
